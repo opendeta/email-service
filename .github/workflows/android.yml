@@ -26,12 +26,18 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Show Android SDK info
+      - name: Decode release keystore (optional)
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls "$ANDROID_HOME/platforms" || true
-          ls "$ANDROID_HOME/build-tools" || true
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
+            echo "Release keystore decoded -> app will produce a SIGNED release APK"
+          else
+            echo "No KEYSTORE_BASE64 secret -> release APK will be unsigned"
+          fi
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
@@ -39,21 +45,28 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Build release APK (unsigned)
+      - name: Build release APK
         run: ./gradlew assembleRelease --stacktrace
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
+      - name: List built APKs
+        run: ls -la app/build/outputs/apk/debug app/build/outputs/apk/release || true
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
 
       - name: Create / update GitHub Release with APKs
@@ -65,9 +78,10 @@ jobs:
             Automated build of **OpenDeta Mail** (Email Services).
 
             - Inbox loads the signed-in Gmail mailbox over IMAP and caches it in SharedPreferences
-            - Tap an email to read it in a WebView detail screen
+            - Emails stream into the list one by one; tap one to read it in a WebView
+            - Three-dot overflow -> Show Code dialog (Copy / close)
             - Compose screen with an HTML code editor, a Run preview dialog and a background scheduler
           files: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/app-release-unsigned.apk
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
           fail_on_unmatched_files: false

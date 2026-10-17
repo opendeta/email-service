@@ -7,6 +7,20 @@ android {
 
     useLibrary 'org.apache.http.legacy'
 
+    // Release signing is only enabled when a keystore is present
+    // (CI writes app/release.keystore from the KEYSTORE_BASE64 secret).
+    def hasReleaseKeystore = file('release.keystore').exists()
+    signingConfigs {
+        release {
+            if (hasReleaseKeystore) {
+                storeFile file('release.keystore')
+                storePassword System.getenv('RELEASE_STORE_PASSWORD') ?: 'opendeta123'
+                keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: 'opendeta'
+                keyPassword System.getenv('RELEASE_KEY_PASSWORD') ?: 'opendeta123'
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "com.opendeta.Mail.Services"
         namespace "com.opendeta.Mail.Services"
@@ -18,6 +32,9 @@ android {
 
     buildTypes {
         release {
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
