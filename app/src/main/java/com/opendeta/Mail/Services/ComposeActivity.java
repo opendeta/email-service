@@ -4,6 +4,7 @@ import android.app.Dialog;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.Window;
@@ -32,6 +33,8 @@ public class ComposeActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
         sp = getSharedPreferences("AppPrefs", MODE_PRIVATE);
 
+        styleButtons();
+
         binding.btnBack.setOnClickListener(v -> finish());
 
         // "Run" -> preview the HTML code inside a WebView dialog (above the editor)
@@ -40,6 +43,29 @@ public class ComposeActivity extends AppCompatActivity {
         binding.btnSend.setOnClickListener(v -> sendNow());
 
         binding.btnSchedule.setOnClickListener(v -> scheduleSend());
+    }
+
+    /** Run / Send / Schedule buttons styled with code-built gradient drawables. */
+    private void styleButtons() {
+        GradientDrawable runBg = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xFF1A73E8, 0xFF0052D4});
+        runBg.setCornerRadius(22f);
+        binding.btnRun.setBackground(runBg);
+        binding.btnRun.setTextColor(0xFFFFFFFF);
+
+        GradientDrawable sendBg = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xFF1A73E8, 0xFF0052D4});
+        sendBg.setCornerRadius(28f);
+        binding.btnSend.setBackground(sendBg);
+        binding.btnSend.setTextColor(0xFFFFFFFF);
+
+        GradientDrawable scheduleBg = new GradientDrawable();
+        scheduleBg.setColor(0xFF0B57D0);
+        scheduleBg.setCornerRadius(22f);
+        binding.btnSchedule.setBackground(scheduleBg);
+        binding.btnSchedule.setTextColor(0xFFFFFFFF);
     }
 
     /** Renders the editor content in a WebView dialog with an "x" close button. */

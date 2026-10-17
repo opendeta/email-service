@@ -7,8 +7,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.method.HideReturnsTransformationMethod;
-import android.text.method.PasswordTransformationMethod;
+import android.text.InputType;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -21,9 +20,15 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.opendeta.Mail.Services.databinding.MainBinding;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Properties;
 
 public class MainActivity extends AppCompatActivity {
+
+    /** How many newest messages to pull from Gmail per load. */
+    private static final int MAX_EMAILS = 50;
 
     private MainBinding binding;
     private SharedPreferences sp;
@@ -42,48 +47,57 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void initializeLogic() {
-        // Gradient buttons (brand look)
+        // ---- styled sign-in button (drawn with code) ----
         GradientDrawable gradient = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{0xFF1A73E8, 0xFF0052D4});
         gradient.setCornerRadius(26f);
         binding.btnSignin.setBackground(gradient);
 
-        // Inbox list
+        // ---- inbox list ----
         adapter = new EmailAdapter();
         binding.lvEmails.setAdapter(adapter);
-        binding.lvEmails.setOnItemClickListener((parent, view, position, id) -> openEmail(emails.get(position)));
+        binding.lvEmails.setOnItemClickListener((parent, view, position, id) ->
+                openEmail(emails.get(position)));
 
-        // Password hide / show
+        // ---- password hide / show ----
         binding.cbHidePassword.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
-                binding.etLoginPassword.setTransformationMethod(PasswordTransformationMethod.getInstance());
+                binding.etLoginPassword.setInputType(
+                        InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
             } else {
-                binding.etLoginPassword.setTransformationMethod(HideReturnsTransformationMethod.getInstance());
+                binding.etLoginPassword.setInputType(
+                        InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
             }
             binding.etLoginPassword.setSelection(binding.etLoginPassword.getText().length());
         });
 
-        // User guide
+        // ---- learn more ----
         binding.tvLearnMore.setOnClickListener(v -> {
             try {
                 startActivity(new Intent(Intent.ACTION_VIEW,
-                        Uri.parse("https://opendeta.github.io/userguide/")));
-            } catch (Exception ignored) {
+                        Uri.parse("https://myaccount.google.com/apppasswords")));
+            } catch (Exception e) {
+                Toast.makeText(getApplicationContext(), "Oops, An Error Occured", Toast.LENGTH_SHORT).show();
             }
         });
 
         binding.btnSignin.setOnClickListener(v -> doSignin());
 
-        // Compose button (right side)
+        // ---- Compose (right side) ----
+        GradientDrawable fabBg = new GradientDrawable();
+        fabBg.setShape(GradientDrawable.OVAL);
+        fabBg.setColor(0xFF1A73E8);
+        binding.fabCompose.setBackground(fabBg);
+
         binding.fabCompose.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, ComposeActivity.class)));
 
-        // Pull-down to refresh
+        // ---- pull down to refresh ----
         binding.swRefresh.setOnRefreshListener(this::fetchInbox);
         binding.swRefresh.setColorSchemeColors(0xFF1A73E8);
 
-        // Splash then decide which screen to show
+        // ---- splash, then choose screen ----
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             binding.layoutSplash.setVisibility(View.GONE);
             String savedGmail = sp.getString("saved_gmail", "");
@@ -98,15 +112,14 @@ public class MainActivity extends AppCompatActivity {
         }, 1500);
     }
 
-    // ---------------------------------------------------------------- sign-in
+    // ------------------------------------------------------------ sign in
 
     private void doSignin() {
         final String gmail = binding.etLoginGmail.getText().toString().trim();
         final String password = binding.etLoginPassword.getText().toString().trim();
 
         if (gmail.isEmpty() || password.isEmpty()) {
-            Toast.makeText(getApplicationContext(),
-                    "Please Enter a Gmail & App Password First.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getApplicationContext(), "Please fill all fields!", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -115,14 +128,26 @@ public class MainActivity extends AppCompatActivity {
         binding.pbSignin.setVisibility(View.VISIBLE);
 
         new Thread(() -> {
-            final boolean ok = MailSender.verify(gmail, password);
+            String error = null;
+            try {
+                Properties props = new Properties();
+                props.put("mail.store.protocol", "imaps");
+                props.put("mail.imaps.host", ImapFetcher.HOST);
+                props.put("mail.imaps.port", String.valueOf(ImapFetcher.PORT));
+                props.put("mail.imaps.ssl.enable", "true");
 
+                javax.mail.Session session = javax.mail.Session.getInstance(props, null);
+                javax.mail.Store store = session.getStore("imaps");
+                store.connect(ImapFetcher.HOST, gmail, password);
+                store.close();
+            } catch (Exception e) {
+                error = e.getMessage() != null ? e.getMessage() : "Authentication / Network Failed";
+            }
+
+            final String actualError = error;
             runOnUiThread(() -> {
                 binding.pbSignin.setVisibility(View.GONE);
-                binding.btnSignin.setText("Sign-in");
-                binding.btnSignin.setEnabled(true);
-
-                if (ok) {
+                if (actualError == null) {
                     sp.edit()
                             .putString("saved_gmail", gmail)
                             .putString("saved_password", password)
@@ -131,23 +156,24 @@ public class MainActivity extends AppCompatActivity {
                     showInbox(gmail);
                     loadCachedInbox();
                 } else {
+                    binding.btnSignin.setText("Sign-in");
+                    binding.btnSignin.setEnabled(true);
                     Toast.makeText(getApplicationContext(),
-                            "Please Enter a valid Gmail and its password or Learn how to Create App Password",
-                            Toast.LENGTH_LONG).show();
+                            "Login Error: " + actualError, Toast.LENGTH_LONG).show();
                 }
             });
         }).start();
     }
 
-    // ------------------------------------------------------------------ inbox
+    // -------------------------------------------------------------- inbox
 
     private void showInbox(String gmail) {
-        binding.tvUserEmail.setText(gmail);
+        binding.tvUserEmail.setText("To: " + gmail);
         binding.layoutInbox.setVisibility(View.VISIBLE);
         updateEmptyState();
     }
 
-    /** Load emails from the SharedPreferences cache (no network). */
+    /** Shows the SharedPreferences cache instantly (no network). */
     private void loadCachedInbox() {
         List<EmailItem> cached = EmailStore.load(this);
         emails.clear();
@@ -155,13 +181,13 @@ public class MainActivity extends AppCompatActivity {
         adapter.notifyDataSetChanged();
         updateEmptyState();
 
-        // Very first launch for this account: nothing cached yet -> fetch once.
+        // nothing cached yet -> fetch once
         if (emails.isEmpty()) {
             fetchInbox();
         }
     }
 
-    /** Fetch the newest emails from Gmail over IMAP and merge them into the cache. */
+    /** Pulls the newest emails over IMAP and streams them into the list one by one. */
     private void fetchInbox() {
         if (loading) {
             binding.swRefresh.setRefreshing(false);
@@ -176,33 +202,63 @@ public class MainActivity extends AppCompatActivity {
         }
 
         loading = true;
-        binding.swRefresh.setRefreshing(true);
+        binding.pbLoading.setVisibility(View.VISIBLE);
 
-        new Thread(() -> {
-            try {
-                List<EmailItem> fetched = ImapFetcher.fetch(gmail, password, 50);
-                final List<EmailItem> merged = EmailStore.mergeAndSave(MainActivity.this, fetched);
+        new Thread(() -> ImapFetcher.fetchStream(gmail, password, MAX_EMAILS, new ImapFetcher.Listener() {
 
+            @Override
+            public void onEmail(final EmailItem item) {
                 runOnUiThread(() -> {
-                    emails.clear();
-                    emails.addAll(merged);
+                    binding.pbLoading.setVisibility(View.GONE);
+                    mergeEmail(item);
                     adapter.notifyDataSetChanged();
                     updateEmptyState();
-                    binding.swRefresh.setRefreshing(false);
-                    loading = false;
-                    Toast.makeText(getApplicationContext(),
-                            "Inbox updated (" + fetched.size() + " messages)", Toast.LENGTH_SHORT).show();
-                });
-            } catch (final Exception e) {
-                runOnUiThread(() -> {
-                    binding.swRefresh.setRefreshing(false);
-                    loading = false;
-                    Toast.makeText(getApplicationContext(),
-                            "Could not load the inbox. Check your connection / App Password.",
-                            Toast.LENGTH_LONG).show();
                 });
             }
-        }).start();
+
+            @Override
+            public void onComplete(int count) {
+                // persist the merged inbox so it never has to be downloaded again
+                EmailStore.save(MainActivity.this, emails);
+                runOnUiThread(() -> {
+                    binding.pbLoading.setVisibility(View.GONE);
+                    binding.swRefresh.setRefreshing(false);
+                    loading = false;
+                });
+            }
+
+            @Override
+            public void onError(final Exception e) {
+                runOnUiThread(() -> {
+                    binding.pbLoading.setVisibility(View.GONE);
+                    binding.swRefresh.setRefreshing(false);
+                    loading = false;
+                    String msg = e.getMessage() != null ? e.getMessage() : "Unknown Stream Error";
+                    Toast.makeText(getApplicationContext(), "Stream Error: " + msg, Toast.LENGTH_LONG).show();
+                });
+            }
+        })).start();
+    }
+
+    private void mergeEmail(EmailItem item) {
+        for (int i = 0; i < emails.size(); i++) {
+            if (emails.get(i).uid.equals(item.uid)) {
+                emails.set(i, item);
+                sortNewestFirst();
+                return;
+            }
+        }
+        emails.add(item);
+        sortNewestFirst();
+    }
+
+    private void sortNewestFirst() {
+        Collections.sort(emails, new Comparator<EmailItem>() {
+            @Override
+            public int compare(EmailItem a, EmailItem b) {
+                return Long.compare(b.timestamp, a.timestamp);
+            }
+        });
     }
 
     private void updateEmptyState() {
@@ -218,7 +274,7 @@ public class MainActivity extends AppCompatActivity {
         startActivity(i);
     }
 
-    // ---------------------------------------------------------------- adapter
+    // ------------------------------------------------------------ adapter
 
     private class EmailAdapter extends BaseAdapter {
         @Override
@@ -243,15 +299,13 @@ public class MainActivity extends AppCompatActivity {
                         .inflate(R.layout.row_email, parent, false);
             }
             EmailItem item = emails.get(position);
-            TextView from = convertView.findViewById(R.id.tv_row_from);
-            TextView date = convertView.findViewById(R.id.tv_row_date);
+            TextView to = convertView.findViewById(R.id.tv_row_to);
             TextView subject = convertView.findViewById(R.id.tv_row_subject);
-            TextView snippet = convertView.findViewById(R.id.tv_row_snippet);
+            TextView date = convertView.findViewById(R.id.tv_row_date);
 
-            from.setText(item.from);
+            to.setText("To: " + (item.to == null || item.to.isEmpty() ? "" : item.to));
+            subject.setText(item.getShortSubject());
             date.setText(item.date);
-            subject.setText(item.subject);
-            snippet.setText(item.getSnippet());
             return convertView;
         }
     }
