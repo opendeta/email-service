@@ -1,0 +1,7 @@
+-repackageclasses
+-ignorewarnings
+-dontwarn
+-dontnote
+-keep class javax.mail.** { *; }
+-keep class com.sun.mail.** { *; }
+-keep class myjava.awt.datatransfer.** { *; }
